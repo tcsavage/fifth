@@ -1,16 +1,17 @@
 (ns fifth.core)
 
-;; Functions have the rough type of ((Stack, Interpreter) -> Stack).
+;; Functions have the rough type of ((Stack, Interpreter, Scope) -> (Stack, Scope)).
 
 (defn recursive
-  "Helper function for operating on the stack allowing for re-invoking the interpreter."
+  "Helper function for operating on the stack allowing for re-invoking the interpreter.
+  Lifts ((Stack, Interpreter) -> Stack) into ((Stack, Interpreter, Scope) -> (Stack, Scope))."
   [f]
   (fn [s interpret scope]
     [(f s (partial interpret scope)) scope]))
 
 (defn pure
   "Helper for functions operating solely on the stack.
-  Lifts a function (Stack -> Stack) into ((Stack, Interpreter) -> Stack)."
+  Lifts a function (Stack -> Stack) into ((Stack, Interpreter, Scope) -> (Stack, Scope))."
   [f]
   (recursive
     (fn [s interpret] (f s))))
