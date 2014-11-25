@@ -1,53 +1,52 @@
 (ns fifth.core)
 
+;; Functions have the rough type of ((Stack, Interpreter) -> Stack).
+
+(defn pure
+  "Helper for functions operating solely on the stack.
+  Lifts a function (Stack -> Stack) into ((Stack, Interpreter) -> Stack)."
+  [f]
+  (fn [s interpret]
+    (f s)))
+
 (defn unop
   "Unary operator wrapper."
   [f]
-  (fn [[x & s] interpret]
-    (conj s (f x))))
+  (pure (fn [[x & s]] (conj s (f x)))))
 
 (defn binop
   "Binary operator wrapper."
   [f]
-  (fn [[x y & s] interpret]
-    (conj s (f x y))))
+  (pure (fn [[x y & s]] (conj s (f x y)))))
 
 (def primops
-  {'noop (fn [s interpret]
-           s)
-   'dup (fn [[x & s] interpret]
-          (conj s x x))
-   'swap (fn [[x y & s] interpret]
-           (conj s x y))
-   'pop (fn [[_ & s] interpret]
-          s)
-   'map (fn [[f xs & s] interpret]
-          (conj s (map (fn [x] (first (interpret (list x f)))) xs)))
+  {'noop   (pure identity)
+   'dup    (pure (fn [[x & s]] (conj s x x)))
+   'swap   (pure (fn [[x y & s]] (conj s x y)))
+   'pop    (pure rest)
+   'conj   (pure (fn [[x xs & s]] (conj s (conj xs x))))
+   '?      (pure (fn [[p t f & s]] (conj s (if f t p))))
+   'print  (pure (fn [[x & s]] (println x) s))
+   'even?  (unop even?)
+   'odd?   (unop odd?)
+   'not    (unop not)
+   'inc    (unop inc)
+   'dec    (unop dec)
+   '+      (binop +)
+   '-      (binop -)
+   '*      (binop *)
+   '/      (binop /)
+   '=      (binop =)
+   '>      (binop >)
+   '>=     (binop >=)
+   '<      (binop <)
+   '<=     (binop <=)
+   'map    (fn [[f xs & s] interpret]
+             (conj s (map (fn [x] (first (interpret (list x f)))) xs)))
    'reduce (fn [[r i xs & s] interpret]
              (conj s (reduce (fn [acc x] (first (interpret (list acc x r)))) i xs)))
-   'conj (fn [[x xs & s] interpret]
-           (conj s (conj xs x)))
-   '? (fn [[p t f & s] interpret]
-        (conj s (if f t p)))
    'invoke (fn [[f & s] interpret]
-             (interpret s (list (symbol (name f)))))
-   'print (fn [[x & s] interpret]
-            (println x)
-            s)
-   'even? (unop even?)
-   'odd? (unop odd?)
-   'not (unop not)
-   'inc (unop inc)
-   'dec (unop dec)
-   '+ (binop +)
-   '- (binop -)
-   '* (binop *)
-   '/ (binop /)
-   '= (binop =)
-   '> (binop >)
-   '>= (binop >=)
-   '< (binop <)
-   '<= (binop <=)})
+             (interpret s (list (symbol (name f)))))})
 
 (defn term
   "Evaluate a term from command sequence with given scope."
