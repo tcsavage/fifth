@@ -43,6 +43,7 @@
    'swap   (pure (fn [[x y & s]] (conj s x y)))
    'pop    (pure rest)
    'conj   (pure (fn [[x xs & s]] (conj s (conj xs x))))
+   'split-first (pure (fn [[[x & xs] & s]] (conj s xs x)))
    '?      (pure (fn [[p t f & s]] (conj s (if f t p))))
    'print  (pure (fn [[x & s]] (println x) s))
    'even?  (unop even?)
@@ -59,9 +60,6 @@
    '>=     (binop >=)
    '<      (binop <)
    '<=     (binop <=)
-   'map    (recursive
-             (fn [[f xs & s] interpret]
-               (conj s (map (fn [x] (first (interpret (list x f)))) xs))))
    'reduce (recursive
              (fn [[r i xs & s] interpret]
                (conj s (reduce (fn [acc x] (first (interpret (list acc x r)))) i xs))))
@@ -71,7 +69,8 @@
    'store  (fn [[name x & s] interpreter scope] [s (assoc scope name (value x))])})
 
 (def prelude
-  {'filter (native '(:p store (reducer dup p invoke :conj :pop ? invoke) [] :reducer reduce))})
+  {'filter (native '(:p store (reducer dup p invoke :conj :pop ? invoke) [] :reducer reduce))
+   'map   (native '(:f store (reducer f invoke conj) [] :reducer reduce))})
 
 (def stdlib (merge primops prelude))
 
