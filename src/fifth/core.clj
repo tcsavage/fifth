@@ -4,7 +4,8 @@
 
 (defn recursive
   "Helper function for operating on the stack allowing for re-invoking the interpreter.
-  Lifts ((Stack, Interpreter) -> Stack) into ((Stack, Interpreter, Scope) -> (Stack, Scope))."
+  Lifts ((Stack, Interpreter) -> Stack) into ((Stack, Interpreter, Scope) -> (Stack, Scope)).
+  Interpreter is partially applied to Scope."
   [f]
   (fn [s interpret scope]
     [(f s (partial interpret scope)) scope]))
@@ -38,16 +39,14 @@
     (fn [s interpret] (interpret s code))))
 
 (def primops
-  {'noop   (pure identity)
-   'dup    (pure (fn [[x & s]] (conj s x x)))
-   'swap   (pure (fn [[x y & s]] (conj s x y)))
-   'pop    (pure rest)
-   'conj   (pure (fn [[x xs & s]] (conj s (conj xs x))))
-   'split-first (pure (fn [[[x & xs] & s]] (conj s xs x)))
-   '?      (pure (fn [[p t f & s]] (conj s (if f t p))))
+  "Primitive operations."
+  {'?      (pure (fn [[p t f & s]] (conj s (if f t p))))
    'print  (pure (fn [[x & s]] (println x) s))
+   'head-tail (pure (fn [[[x & xs] & s]] (conj s xs x)))
+   'cons   (pure (fn [[x xs & s]] (conj s (cons x xs))))
    'even?  (unop even?)
    'odd?   (unop odd?)
+   'empty? (unop empty?)
    'not    (unop not)
    'inc    (unop inc)
    'dec    (unop dec)
@@ -60,17 +59,23 @@
    '>=     (binop >=)
    '<      (binop <)
    '<=     (binop <=)
-   'reduce (recursive
-             (fn [[r i xs & s] interpret]
-               (conj s (reduce (fn [acc x] (first (interpret (list acc x r)))) i xs))))
    'invoke (recursive
              (fn [[f & s] interpret]
                (interpret s (list (symbol (name f))))))
    'store  (fn [[name x & s] interpreter scope] [s (assoc scope name (value x))])})
 
 (def prelude
-  {'filter (native '(:p store (reducer dup p invoke :conj :pop ? invoke) [] :reducer reduce))
-   'map   (native '(:f store (reducer f invoke conj) [] :reducer reduce))})
+  "Basic functions."
+  {'noop   (native '())
+   'dup    (native '(:x store x x))
+   'swap   (native '(:x store :y store x y))
+   'pop    (native '(:x store))
+   'reduce (native '(:r store :i store
+                     (empty-branch pop i)
+                     (rec-branch head-tail swap i r reduce swap r invoke)
+                     dup empty? :empty-branch :rec-branch ? invoke))
+   'filter (native '(:p store (reducer dup p invoke :cons :pop ? invoke) [] :reducer reduce))
+   'map   (native '(:f store (reducer f invoke cons) [] :reducer reduce))})
 
 (def stdlib (merge primops prelude))
 
@@ -79,7 +84,10 @@
   [x scope]
   (cond
     ; Symbols refer to functions in scope.
-    (symbol? x) [(scope x) scope]
+    (symbol? x) (let [f (scope x)]
+                  (if f
+                    [(scope x) scope]
+                    (throw (Exception. (format "Lookup failed for symbol '%s'" (str x))))))
     ; Keywords are references to functions, not necessarily in scope.
     (keyword? x) [(fn [s interpret scope] [(conj s (symbol (name x))) scope]) scope]
     ; Lists denote function definitions. Head is function name.
@@ -109,6 +117,3 @@
       ->vec
       ->vec
       (first (interpret stdlib prog)))))
-
-(defn run [] (fifth ((keep-odd dup even? not :conj :pop ? invoke)
-                     [1 2 3 4 5] [] :keep-odd reduce)))
