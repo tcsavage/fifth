@@ -1,6 +1,8 @@
 (ns fifth.core)
 
 ;; Functions have the rough type of ((Stack, Interpreter, Scope) -> (Stack, Scope)).
+;; Convention: stack locations are referred to by "Sn", such that "S0" is the
+;; top of the stack, "S1" is the next highest position, etc.
 
 (defn recursive
   "Helper function for operating on the stack allowing for re-invoking the interpreter.
@@ -40,42 +42,57 @@
 
 (def primops
   "Primitive operations."
-  {'?      (pure (fn [[p t f & s]] (conj s (if f t p))))
-   'print  (pure (fn [[x & s]] (println x) s))
+  {; If. Pops S0, S1, S2; if S0 is logical true, re-pushes S1, else S2.
+   '?         (pure (fn [[p t f & s]] (conj s (if f t p))))
+   ; Pops S0 and prints it to stdout.
+   'print     (pure (fn [[x & s]] (println x) s))
+   ; Pops S0, splits into head and tail, pushes tail followed by head.
    'head-tail (pure (fn [[[x & xs] & s]] (conj s xs x)))
-   'cons   (pure (fn [[x xs & s]] (conj s (cons x xs))))
-   'even?  (unop even?)
-   'odd?   (unop odd?)
-   'empty? (unop empty?)
-   'not    (unop not)
-   'inc    (unop inc)
-   'dec    (unop dec)
-   '+      (binop +)
-   '-      (binop -)
-   '*      (binop *)
-   '/      (binop /)
-   '=      (binop =)
-   '>      (binop >)
-   '>=     (binop >=)
-   '<      (binop <)
-   '<=     (binop <=)
-   'invoke (recursive
-             (fn [[f & s] interpret]
-               (interpret s (list (symbol (name f))))))
-   'store  (fn [[name x & s] interpreter scope] [s (assoc scope name (value x))])})
+   ; Pops S0 and S1. Pushes result of (cons S0 S1)
+   'cons      (pure (fn [[x xs & s]] (conj s (cons x xs))))
+   ; Unary operators. Pops S0 and pushes result of (OPERATOR S0).
+   'even?     (unop even?)
+   'odd?      (unop odd?)
+   'empty?    (unop empty?)
+   'not       (unop not)
+   'inc       (unop inc)
+   'dec       (unop dec)
+   ; Binary operators. Pops S0 and S1, pushes result of (OPERATOR S1 S0).
+   '+         (binop +)
+   '-         (binop -)
+   '*         (binop *)
+   '/         (binop /)
+   '=         (binop =)
+   '>         (binop >)
+   '>=        (binop >=)
+   '<         (binop <)
+   '<=        (binop <=)
+   ; Pops S0. Looks-up S0 in scope as function and invokes it.
+   'invoke    (recursive
+                (fn [[f & s] interpret]
+                  (interpret s (list (symbol (name f))))))
+   ; Pops S0 and S1. Builds function in scope with name S0 which pushes S1 when invoked.
+   'store     (fn [[name x & s] interpreter scope] [s (assoc scope name (value x))])})
 
 (def prelude
   "Basic functions."
-  {'noop   (native '())
+  {; Identity function. Does nothing.
+   'noop   (native '())
+   ; Duplicates S0.
    'dup    (native '(:x store x x))
+   ; Swaps top two stack elements. Pops S0 and S1, pushes S0 then S1.
    'swap   (native '(:x store :y store x y))
+   ; Pops S0 and discards it.
    'pop    (native '(:x store))
+   ; List reduction. Pops S0, S1 and S2. Pushes equivalent of (reduce S0 S1 S2).
    'reduce (native '(:r store :i store
                      (empty-branch pop i)
                      (rec-branch head-tail swap i r reduce swap r invoke)
                      dup empty? :empty-branch :rec-branch ? invoke))
+   ; List filtering. Pops S0 and S1. Pushes equivalent of (filter S0 S1).
    'filter (native '(:p store (reducer dup p invoke :cons :pop ? invoke) [] :reducer reduce))
-   'map   (native '(:f store (reducer f invoke cons) [] :reducer reduce))})
+   ; List mapping. Pops S0 and S1. Pushes equivalent of (map S0 S1).
+   'map    (native '(:f store (reducer f invoke cons) [] :reducer reduce))})
 
 (def stdlib (merge primops prelude))
 
@@ -99,19 +116,25 @@
     :else [(fn [s interpret scope] [(conj s x) scope]) scope]))
 
 (defn interpret
+  "Interpret a program with given intital scope, and optionally, an inital
+  stack (defaults to empty)."
   ([scope program]
    (interpret scope () program))
   ([scope stack program]
    (let [[final fscope]
+         ; For each term in the program...
          (reduce (fn [[s scope] t]
-                   ; (println "term>>" t)
+                   ; Evaluate it...
                    (let [[f scope'] (term t scope)]
+                     ; And apply the resulting function to the stack and scope.
                      (f s interpret scope')))
                  [stack scope]
                  program)]
      final)))
 
-(defmacro fifth [prog]
+(defmacro fifth
+  "Helper macro for running programs. Only returns top of stack."
+  [prog]
   (letfn [(->vec [x] (if (coll? x) (into [] x) x))]
     (clojure.walk/walk
       ->vec
